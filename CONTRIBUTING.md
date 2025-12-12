@@ -69,3 +69,44 @@ issues will require more discussion than others.
 
 [1]:  https://github.com/google/cel-spec
 [2]:  https://groups.google.com/forum/#!forum/cel-go-discuss
+
+## Development Environment
+
+1. Install [bazelisk](https://github.com/bazelbuild/bazelisk) and make sure it
+   is available as `bazel` in your `$PATH`.
+
+2. Build the project and optionally run the tests. Bazelisk will automatically
+   install the required bazel version.
+
+    ```sh
+    bazelisk build ...
+    bazelisk test ...
+    ```
+
+3. If your editor uses `gopls`, follow [bazel editor setup guide][3].
+   Unfortunately some imports for tests won't work correctly because of a bug in
+   [bazel](https://github.com/bazel-contrib/rules_go/issues/3981). For Visual
+   Studio Code, use this `.vscode/settings.json`:
+
+    ```json
+    {
+        "go.goroot": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/bazel-cel-go/external/rules_go~~go_sdk~main___download_0",
+        "go.toolsEnvVars": {
+            "GOPACKAGESDRIVER": "${workspaceFolder}/scripts/gopackagesdriver.sh"
+        },
+        "gopls": {
+            "build.workspaceFiles": [
+                "**/*.bazel",
+            ],
+            "build.directoryFilters": [
+                "-bazel-bin",
+                "-bazel-out",
+                "-bazel-testlogs",
+                "-bazel-cel-go",
+            ],
+
+        },
+    }
+    ```
+
+[3]: https://github.com/bazel-contrib/rules_go/wiki/Editor-setup
