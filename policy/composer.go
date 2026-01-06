@@ -71,12 +71,18 @@ type RuleComposer struct {
 
 // Compose stitches together a set of expressions within a CompiledRule into a single CEL ast.
 func (c *RuleComposer) Compose(r *CompiledRule) (*cel.Ast, *cel.Issues) {
-	ruleRoot, _ := c.env.Compile("true")
+	// dummyExpr is a placeholder expression used as the root of the AST before optimization. Because
+	// StaticOptimizer copies the source info from it, we must set the correct source info here.
+	source := recoverOriginalSource(r)
+	sourceInfo := ast.NewSourceInfo(source)
+	dummyExpr := ast.NewExprFactory().NewLiteral(1, types.True)
+	ruleRoot := cel.NewAst(source, ast.NewAST(dummyExpr, sourceInfo))
+
 	composer := &ruleComposerImpl{
 		rule:       r,
 		varIndices: []varIndex{},
 	}
-	opt := cel.NewStaticOptimizer(composer)
+	opt := cel.NewStaticOptimizerWithSourceInfoMerging(composer)
 	ast, iss := opt.Optimize(c.env, ruleRoot)
 	if iss.Err() != nil {
 		return nil, iss
@@ -87,6 +93,20 @@ func (c *RuleComposer) Compose(r *CompiledRule) (*cel.Ast, *cel.Issues) {
 	}
 	opt = cel.NewStaticOptimizer(unnester)
 	return opt.Optimize(c.env, ast)
+}
+
+func recoverOriginalSource(r *CompiledRule) cel.Source {
+	match := r.Matches()[0]
+	var source cel.Source
+	if match.Output() != nil {
+		source = match.Output().Expr().Source()
+	} else {
+		source = match.Condition().Source()
+	}
+	if rel, ok := source.(*RelativeSource); ok {
+		source = rel.Source
+	}
+	return source
 }
 
 type varIndex struct {
