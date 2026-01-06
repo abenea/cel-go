@@ -32,14 +32,27 @@ import (
 // Note: source position information is best-effort and likely wrong, but optimized expressions
 // should be suitable for calls to parser.Unparse.
 type StaticOptimizer struct {
-	optimizers []ASTOptimizer
+	optimizers      []ASTOptimizer
+	mergeSourceInfo bool
 }
 
 // NewStaticOptimizer creates a StaticOptimizer with a sequence of ASTOptimizer's to be applied
 // to a checked expression.
 func NewStaticOptimizer(optimizers ...ASTOptimizer) *StaticOptimizer {
 	return &StaticOptimizer{
-		optimizers: optimizers,
+		optimizers:      optimizers,
+		mergeSourceInfo: false,
+	}
+}
+
+// NewStaticOptimizerWithSourceInfoMerging creates a StaticOptimizer with a sequence of
+// ASTOptimizer's to be applied to a checked expression. The source info of the optimized AST will
+// be merged with the source info of the input AST which is useful when merging multiple expressions
+// defined in the same file. Used only for policy composition.
+func NewStaticOptimizerWithSourceInfoMerging(optimizers ...ASTOptimizer) *StaticOptimizer {
+	return &StaticOptimizer{
+		optimizers:      optimizers,
+		mergeSourceInfo: true,
 	}
 }
 
@@ -55,9 +68,10 @@ func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 	issues := NewIssues(common.NewErrors(a.Source()))
 	baseFac := ast.NewExprFactory()
 	exprFac := &optimizerExprFactory{
-		idGenerator: ids,
-		fac:         baseFac,
-		sourceInfo:  optimized.SourceInfo(),
+		idGenerator:     ids,
+		fac:             baseFac,
+		sourceInfo:      optimized.SourceInfo(),
+		mergeSourceInfo: opt.mergeSourceInfo,
 	}
 	ctx := &OptimizerContext{
 		optimizerExprFactory: exprFac,
@@ -75,7 +89,7 @@ func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 		freshIDGen := newIDGenerator(0)
 		info := optimized.SourceInfo()
 		expr := optimized.Expr()
-		normalizeIDs(freshIDGen.renumberStable, expr, info)
+		normalizeIDs(freshIDGen.renumberStable, expr, info, exprFac.mergeSourceInfo)
 		cleanupMacroRefs(expr, info)
 
 		// Recheck the updated expression for any possible type-agreement or validation errors.
@@ -96,10 +110,30 @@ func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 	}, nil
 }
 
+func updateOffsetRanges(idGen ast.IDGenerator, info *ast.SourceInfo) {
+	newRanges := make(map[int64]ast.OffsetRange)
+	sortedOldIDs := []int64{}
+	for oldID := range info.OffsetRanges() {
+		sortedOldIDs = append(sortedOldIDs, oldID)
+	}
+	sort.Slice(sortedOldIDs, func(i, j int) bool { return sortedOldIDs[i] < sortedOldIDs[j] })
+	for _, oldID := range sortedOldIDs {
+		offsetRange, _ := info.GetOffsetRange(oldID)
+		newRanges[idGen(oldID)] = offsetRange
+		info.ClearOffsetRange(oldID)
+	}
+	for newID, offsetRange := range newRanges {
+		info.SetOffsetRange(newID, offsetRange)
+	}
+}
+
 // normalizeIDs ensures that the metadata present with an AST is reset in a manner such
 // that the ids within the expression correspond to the ids within macros.
-func normalizeIDs(idGen ast.IDGenerator, optimized ast.Expr, info *ast.SourceInfo) {
+func normalizeIDs(idGen ast.IDGenerator, optimized ast.Expr, info *ast.SourceInfo, mergeSourceInfo bool) {
 	optimized.RenumberIDs(idGen)
+	if mergeSourceInfo {
+		updateOffsetRanges(idGen, info)
+	}
 	if len(info.MacroCalls()) == 0 {
 		return
 	}
@@ -229,8 +263,9 @@ type ASTOptimizer interface {
 
 type optimizerExprFactory struct {
 	*idGenerator
-	fac        ast.ExprFactory
-	sourceInfo *ast.SourceInfo
+	fac             ast.ExprFactory
+	sourceInfo      *ast.SourceInfo
+	mergeSourceInfo bool
 }
 
 // NewAST creates an AST from the current expression using the tracked source info which
@@ -249,7 +284,7 @@ func (opt *optimizerExprFactory) CopyAST(a *ast.AST) (ast.Expr, *ast.SourceInfo)
 	defer func() { opt.seed = idGen.nextID() }()
 	copyExpr := opt.fac.CopyExpr(a.Expr())
 	copyInfo := ast.CopySourceInfo(a.SourceInfo())
-	normalizeIDs(idGen.renumberStable, copyExpr, copyInfo)
+	normalizeIDs(idGen.renumberStable, copyExpr, copyInfo, opt.mergeSourceInfo)
 	return copyExpr, copyInfo
 }
 
@@ -259,6 +294,11 @@ func (opt *optimizerExprFactory) CopyASTAndMetadata(a *ast.AST) ast.Expr {
 	copyExpr, copyInfo := opt.CopyAST(a)
 	for macroID, call := range copyInfo.MacroCalls() {
 		opt.SetMacroCall(macroID, call)
+	}
+	if opt.mergeSourceInfo {
+		for id, offset := range copyInfo.OffsetRanges() {
+			opt.sourceInfo.SetOffsetRange(id, offset)
+		}
 	}
 	return copyExpr
 }

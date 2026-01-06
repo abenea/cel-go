@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/google/cel-go/cel"
@@ -73,6 +74,8 @@ func TestRuleComposerUnnest(t *testing.T) {
 			if iss.Err() != nil {
 				t.Fatalf("Compose(rule) failed: %v", iss.Err())
 			}
+			policy := parsePolicy(t, tc.name, []ParserOption{})
+			verifySourceInfoCoverage(t, policy, ast)
 			unparsed, err := cel.AstToString(ast)
 			if err != nil {
 				t.Fatalf("cel.AstToString() failed: %v", err)
@@ -507,6 +510,7 @@ func compile(t testing.TB, name string, policy *Policy, envOpts []cel.EnvOption,
 		t.Fatalf("env.Extend() with config options %v, failed: %v", config, err)
 	}
 	ast, iss := Compile(env, policy, compilerOpts...)
+	verifySourceInfoCoverage(t, policy, ast)
 	return env, ast, iss
 }
 
@@ -515,4 +519,82 @@ func normalize(s string) string {
 		strings.ReplaceAll(
 			strings.ReplaceAll(s, " ", ""), "\n", ""),
 		"\t", "")
+}
+
+func verifySourceInfoCoverage(t testing.TB, policy *Policy, ast *cel.Ast) {
+	t.Helper()
+	info := ast.SourceInfo()
+	if info == nil {
+		return
+	}
+
+	exprLines := exprLinesFromPolicy(policy)
+	coveredLines := make(map[int]bool)
+	ids := getAstIds(ast)
+	for id, offset := range info.GetPositions() {
+		// Check that each position in the SourceInfo corresponds to a valid AST node.
+		if !ids[id] {
+			t.Errorf("id %d not found in AST", id)
+		}
+		loc, found := ast.Source().OffsetLocation(offset)
+		if found {
+			coveredLines[loc.Line()] = true
+		} else {
+			t.Errorf("invalid source location for offset %d", offset)
+		}
+	}
+	// Verify that each source line inside an expression is covered by the at least one node in the
+	// AST.
+	for line := range exprLines {
+		if !coveredLines[line] {
+			t.Errorf("Line %d expected to be covered by SourceInfo, but was not", line)
+		}
+	}
+
+	if t.Failed() {
+		checked, err := cel.AstToCheckedExpr(ast)
+		if err != nil {
+			t.Logf("cel.AstToCheckedExpr() failed: %v", err)
+		} else {
+			t.Logf("AST:\n%s", prototext.Format(checked.GetExpr()))
+		}
+	}
+}
+
+// exprLinesFromPolicy returns a set of line numbers within a policy where expressions (variables,
+// conditions, etc.) are defined.
+func exprLinesFromPolicy(policy *Policy) map[int]bool {
+	lines := make(map[int]bool)
+	addExpectedLines := func(vs ValueString) {
+		if offset, found := policy.SourceInfo().GetOffsetRange(vs.ID); found {
+			startLoc, foundStart := policy.Source().OffsetLocation(offset.Start)
+			// Multiline strings can span multiple lines, but the SourceInfo will only contain the start
+			// position of the expression. So just skip the check if the expression contains a multiline
+			// string literal.
+			hasMultiline := strings.Contains(vs.Value, "'''") || strings.Contains(vs.Value, "\"\"\"")
+			if foundStart && !hasMultiline {
+				numLines := strings.Count(vs.Value, "\n")
+				for i := 0; i <= numLines; i++ {
+					lines[startLoc.Line()+i] = true
+				}
+			}
+		}
+	}
+	var traverseRule func(r *Rule)
+	traverseRule = func(r *Rule) {
+		for _, v := range r.Variables() {
+			addExpectedLines(v.Expression())
+		}
+		for _, m := range r.Matches() {
+			addExpectedLines(m.Condition())
+			if m.HasOutput() {
+				addExpectedLines(m.Output())
+			}
+			if m.HasRule() {
+				traverseRule(m.Rule())
+			}
+		}
+	}
+	traverseRule(policy.Rule())
+	return lines
 }

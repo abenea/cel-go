@@ -263,8 +263,7 @@ type compiler struct {
 func (c *compiler) compileRule(r *Rule, ruleEnv *cel.Env, iss *cel.Issues) (*CompiledRule, *cel.Issues) {
 	compiledVars := make([]*CompiledVariable, len(r.Variables()))
 	for i, v := range r.Variables() {
-		exprSrc := c.relSource(v.Expression())
-		varAST, exprIss := ruleEnv.CompileSource(exprSrc)
+		varAST, exprIss := c.compileValueString(ruleEnv, v.Expression())
 		varName := v.Name().Value
 
 		// Determine the variable type. If the expression is an error then record the error and
@@ -304,8 +303,7 @@ func (c *compiler) compileRule(r *Rule, ruleEnv *cel.Env, iss *cel.Issues) (*Com
 	// Compile the set of match conditions under the rule.
 	compiledMatches := []*CompiledMatch{}
 	for _, m := range r.Matches() {
-		condSrc := c.relSource(m.Condition())
-		condAST, condIss := ruleEnv.CompileSource(condSrc)
+		condAST, condIss := c.compileValueString(ruleEnv, m.Condition())
 		iss = iss.Append(condIss)
 		// This case cannot happen when the Policy object is parsed from yaml, but could happen
 		// with a non-YAML generation of the Policy object.
@@ -315,8 +313,7 @@ func (c *compiler) compileRule(r *Rule, ruleEnv *cel.Env, iss *cel.Issues) (*Com
 			continue
 		}
 		if m.HasOutput() {
-			outSrc := c.relSource(m.Output())
-			outAST, outIss := ruleEnv.CompileSource(outSrc)
+			outAST, outIss := c.compileValueString(ruleEnv, m.Output())
 			iss = iss.Append(outIss)
 			compiledMatches = append(compiledMatches, &CompiledMatch{
 				exprID: m.exprID,
@@ -411,16 +408,56 @@ func (c *compiler) checkUnreachableCode(rule *CompiledRule, iss *cel.Issues) {
 	}
 }
 
-func (c *compiler) relSource(pstr ValueString) *RelativeSource {
+func (c *compiler) compileValueString(env *cel.Env, vs ValueString) (*cel.Ast, *cel.Issues) {
 	line := 0
 	col := 1
-	if offset, found := c.info.GetOffsetRange(pstr.ID); found {
-		if loc, found := c.src.OffsetLocation(offset.Start); found {
+	offset, found := c.info.GetOffsetRange(vs.ID)
+	if found {
+		if loc, offsetFound := c.src.OffsetLocation(offset.Start); offsetFound {
 			line = loc.Line()
 			col = loc.Column()
 		}
 	}
-	return c.src.Relative(pstr.Value, line, col)
+	relSource := c.src.Relative(vs.Value, line, col)
+	ast, iss := env.CompileSource(relSource)
+	info := ast.NativeRep().SourceInfo()
+	var keepIDs map[int64]bool
+	if !found {
+    // Remove the newly created offset ranges if the ValueString is not associated with a source
+    // position. This currently happens because the parser creates a synthetic "true" condition if a
+    // match doesn't have one.
+		keepIDs = make(map[int64]bool)
+	} else {
+		// Remove offset ranges for ids without a corresponding AST node. This can happen because the
+		// checker deletes some nodes while rewriting the AST. For example the Select operand is deleted
+		// when a variable reference is replaced with a Ident expression.
+		keepIDs = getAstIds(ast)
+	}
+	for id := range info.OffsetRanges() {
+		if !keepIDs[id] {
+			info.ClearOffsetRange(id)
+		}
+	}
+	return ast, iss
+}
+
+type idVisitor struct {
+	ids map[int64]bool
+}
+
+func (v *idVisitor) VisitExpr(e ast.Expr) {
+	v.ids[e.ID()] = true
+}
+
+func (v *idVisitor) VisitEntryExpr(e ast.EntryExpr) {
+	v.ids[e.ID()] = true
+}
+
+// getAstIds returns a set of AST node IDs
+func getAstIds(celAst *cel.Ast) map[int64]bool {
+	visitor := &idVisitor{ids: make(map[int64]bool)}
+	ast.PostOrderVisit(celAst.NativeRep().Expr(), visitor)
+	return visitor.ids
 }
 
 const (
