@@ -15,6 +15,7 @@
 package cel
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/google/cel-go/common"
@@ -32,27 +33,38 @@ import (
 // Note: source position information is best-effort and likely wrong, but optimized expressions
 // should be suitable for calls to parser.Unparse.
 type StaticOptimizer struct {
-	optimizers      []ASTOptimizer
-	mergeSourceInfo bool
+	optimizers []ASTOptimizer
+	source     *Source
 }
+
+type OptimizerOption func(*StaticOptimizer) (*StaticOptimizer, error)
 
 // NewStaticOptimizer creates a StaticOptimizer with a sequence of ASTOptimizer's to be applied
 // to a checked expression.
-func NewStaticOptimizer(optimizers ...ASTOptimizer) *StaticOptimizer {
-	return &StaticOptimizer{
-		optimizers:      optimizers,
-		mergeSourceInfo: false,
+func NewStaticOptimizer(options ...any) (*StaticOptimizer, error) {
+	so := &StaticOptimizer{}
+	var err error
+	for _, opt := range options {
+		switch v := opt.(type) {
+		case ASTOptimizer:
+			so.optimizers = append(so.optimizers, v)
+		case OptimizerOption:
+			so, err = v(so)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("unsupported option: %v", v)
+		}
 	}
+	return so, nil
 }
 
-// NewStaticOptimizerWithSourceInfoMerging creates a StaticOptimizer with a sequence of
-// ASTOptimizer's to be applied to a checked expression. The source info of the optimized AST will
-// be merged with the source info of the input AST which is useful when merging multiple expressions
-// defined in the same file. Used only for policy composition.
-func NewStaticOptimizerWithSourceInfoMerging(optimizers ...ASTOptimizer) *StaticOptimizer {
-	return &StaticOptimizer{
-		optimizers:      optimizers,
-		mergeSourceInfo: true,
+// OptimizeWithSource overrides the source used by the optimizer.
+func OptimizeWithSource(source Source) OptimizerOption {
+	return func(so *StaticOptimizer) (*StaticOptimizer, error) {
+		so.source = &source
+		return so, nil
 	}
 }
 
@@ -62,16 +74,23 @@ func NewStaticOptimizerWithSourceInfoMerging(optimizers ...ASTOptimizer) *Static
 func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 	// Make a copy of the AST to be optimized.
 	optimized := ast.Copy(a.NativeRep())
+	if opt.source != nil {
+		optimized = ast.NewAST(optimized.Expr(), ast.NewSourceInfo(*opt.source))
+	}
 	ids := newIDGenerator(ast.MaxID(a.NativeRep()))
 
+	source := a.Source()
+	if opt.source != nil {
+		source = *opt.source
+	}
 	// Create the optimizer context, could be pooled in the future.
-	issues := NewIssues(common.NewErrors(a.Source()))
+	issues := NewIssues(common.NewErrors(source))
 	baseFac := ast.NewExprFactory()
 	exprFac := &optimizerExprFactory{
 		idGenerator:     ids,
 		fac:             baseFac,
 		sourceInfo:      optimized.SourceInfo(),
-		mergeSourceInfo: opt.mergeSourceInfo,
+		mergeSourceInfo: opt.source != nil,
 	}
 	ctx := &OptimizerContext{
 		optimizerExprFactory: exprFac,
@@ -94,7 +113,7 @@ func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 
 		// Recheck the updated expression for any possible type-agreement or validation errors.
 		parsed := &Ast{
-			source: a.Source(),
+			source: source,
 			impl:   ast.NewAST(expr, info)}
 		checked, iss := ctx.Check(parsed)
 		if iss.Err() != nil {
@@ -105,7 +124,7 @@ func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 
 	// Return the optimized result.
 	return &Ast{
-		source: a.Source(),
+		source: source,
 		impl:   optimized,
 	}, nil
 }

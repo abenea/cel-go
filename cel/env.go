@@ -48,14 +48,6 @@ type Ast struct {
 	impl   *celast.AST
 }
 
-// NewAst creates a new Ast value from a source and its native representation.
-func NewAst(source Source, impl *celast.AST) *Ast {
-	return &Ast{
-		source: source,
-		impl:   impl,
-	}
-}
-
 // NativeRep converts the AST to a Go-native representation.
 func (ast *Ast) NativeRep() *celast.AST {
 	if ast == nil {

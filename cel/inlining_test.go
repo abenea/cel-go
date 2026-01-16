@@ -220,7 +220,10 @@ func TestInliningOptimizer(t *testing.T) {
 				t.Fatalf("Compile() failed: %v", iss.Err())
 			}
 
-			opt := cel.NewStaticOptimizer(cel.NewInliningOptimizer(inlinedVars...))
+			opt, err := cel.NewStaticOptimizer(cel.NewInliningOptimizer(inlinedVars...))
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -236,7 +239,10 @@ func TestInliningOptimizer(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt = cel.NewStaticOptimizer(folder)
+			opt, err = cel.NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss = opt.Optimize(e, optimized)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -727,7 +733,10 @@ func TestInliningOptimizerMultiStage(t *testing.T) {
 				t.Fatalf("Compile() failed: %v", iss.Err())
 			}
 
-			opt := cel.NewStaticOptimizer(cel.NewInliningOptimizer(inlinedVars...))
+			opt, err := cel.NewStaticOptimizer(cel.NewInliningOptimizer(inlinedVars...))
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -743,7 +752,10 @@ func TestInliningOptimizerMultiStage(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt = cel.NewStaticOptimizer(folder)
+			opt, err = cel.NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss = opt.Optimize(e, optimized)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())

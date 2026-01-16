@@ -366,7 +366,10 @@ func TestConstantFoldingOptimizer(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt := NewStaticOptimizer(folder)
+			opt, err := NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -441,7 +444,10 @@ func TestConstantFoldingCallsWithSideEffects(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt := NewStaticOptimizer(folder)
+			opt, err := NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if tc.error != "" {
 				if iss.Err() == nil {
@@ -508,7 +514,10 @@ func TestConstantFoldingOptimizerMacroElimination(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt := NewStaticOptimizer(folder)
+			opt, err := NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -570,7 +579,10 @@ func TestConstantFoldingOptimizerWithLimit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt := NewStaticOptimizer(folder)
+			opt, err := NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -828,7 +840,10 @@ func TestConstantFoldingNormalizeIDs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConstantFoldingOptimizer() failed: %v", err)
 			}
-			opt := NewStaticOptimizer(folder)
+			opt, err := NewStaticOptimizer(folder)
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optimized, iss := opt.Optimize(e, checked)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())

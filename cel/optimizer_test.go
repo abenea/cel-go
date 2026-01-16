@@ -45,7 +45,10 @@ func TestStaticOptimizerUpdateExpr(t *testing.T) {
 	if iss.Err() != nil {
 		t.Fatalf("Compile() failed: %v", iss.Err())
 	}
-	opt := cel.NewStaticOptimizer(&testOptimizer{t: t, inlineExpr: inlinedAST.NativeRep()})
+	opt, err := cel.NewStaticOptimizer(&testOptimizer{t: t, inlineExpr: inlinedAST.NativeRep()})
+	if err != nil {
+		t.Fatalf("NewStaticOptimizer() failed: %v", err)
+	}
 	optAST, iss := opt.Optimize(e, exprAST)
 	if iss.Err() != nil {
 		t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -186,7 +189,10 @@ func TestStaticOptimizerNewAST(t *testing.T) {
 			if iss.Err() != nil {
 				t.Fatalf("Compile(%q) failed: %v", tc, iss.Err())
 			}
-			opt := cel.NewStaticOptimizer(&identityOptimizer{t: t})
+			opt, err := cel.NewStaticOptimizer(&identityOptimizer{t: t})
+			if err != nil {
+				t.Fatalf("NewStaticOptimizer() failed: %v", err)
+			}
 			optAST, iss := opt.Optimize(e, exprAST)
 			if iss.Err() != nil {
 				t.Fatalf("Optimize() generated an invalid AST: %v", iss.Err())
@@ -204,7 +210,10 @@ func TestStaticOptimizerNewAST(t *testing.T) {
 
 func TestStaticOptimizerNilAST(t *testing.T) {
 	env := optimizerEnv(t)
-	opt := cel.NewStaticOptimizer(&identityOptimizer{t: t})
+	opt, err := cel.NewStaticOptimizer(&identityOptimizer{t: t})
+	if err != nil {
+		t.Fatalf("NewStaticOptimizer() failed: %v", err)
+	}
 	optAST, iss := opt.Optimize(env, nil)
 	if iss.Err() == nil || !strings.Contains(iss.Err().Error(), "unexpected unspecified type") {
 		t.Errorf("opt.Optimize(env, nil) got (%v, %v), wanted unexpected unspecified type", optAST, iss)

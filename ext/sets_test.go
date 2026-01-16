@@ -430,7 +430,10 @@ func TestSetsMembershipRewriter(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSetMembershipOptimizer() failed with error: %v", err)
 			}
-			opt := cel.NewStaticOptimizer(setsOpt)
+			opt, err := cel.NewStaticOptimizer(setsOpt)
+			if err != nil {
+				t.Fatalf("cel.NewStaticOptimizer() failed with error: %v", err)
+			}
 			optAST, iss := opt.Optimize(env, a)
 			if iss.Err() != nil {
 				t.Fatalf("opt.Optimize() failed: %v", iss.Err())

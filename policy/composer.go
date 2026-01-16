@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types"
@@ -71,18 +72,22 @@ type RuleComposer struct {
 
 // Compose stitches together a set of expressions within a CompiledRule into a single CEL ast.
 func (c *RuleComposer) Compose(r *CompiledRule) (*cel.Ast, *cel.Issues) {
-	// dummyExpr is a placeholder expression used as the root of the AST before optimization. Because
-	// StaticOptimizer copies the source info from it, we must set the correct source info here.
-	source := recoverOriginalSource(r)
-	sourceInfo := ast.NewSourceInfo(source)
-	dummyExpr := ast.NewExprFactory().NewLiteral(1, types.True)
-	ruleRoot := cel.NewAst(source, ast.NewAST(dummyExpr, sourceInfo))
+	ruleRoot, _ := c.env.Compile("true")
 
 	composer := &ruleComposerImpl{
 		rule:       r,
 		varIndices: []varIndex{},
 	}
-	opt := cel.NewStaticOptimizerWithSourceInfoMerging(composer)
+	// ruleRoot is a placeholder expression used as the root of the AST before optimization. Because
+	// StaticOptimizer would normally copy the source info from it, we must use OptimizeWithSource
+	// to override the correct source.
+	source := recoverOriginalSource(r)
+	opt, err := cel.NewStaticOptimizer(composer, cel.OptimizeWithSource(source))
+	if err != nil {
+		errs := common.NewErrors(source)
+		errs.ReportErrorString(common.NoLocation, err.Error())
+		return nil, cel.NewIssues(errs)
+	}
 	ast, iss := opt.Optimize(c.env, ruleRoot)
 	if iss.Err() != nil {
 		return nil, iss
@@ -91,7 +96,12 @@ func (c *RuleComposer) Compose(r *CompiledRule) (*cel.Ast, *cel.Issues) {
 		varIndices:       []varIndex{},
 		exprUnnestHeight: c.exprUnnestHeight,
 	}
-	opt = cel.NewStaticOptimizer(unnester)
+	opt, err = cel.NewStaticOptimizer(unnester)
+	if err != nil {
+		errs := common.NewErrors(source)
+		errs.ReportErrorString(common.NoLocation, err.Error())
+		return nil, cel.NewIssues(errs)
+	}
 	return opt.Optimize(c.env, ast)
 }
 
