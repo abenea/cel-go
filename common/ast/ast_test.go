@@ -16,6 +16,7 @@ package ast_test
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"testing"
 
@@ -387,4 +388,41 @@ func (src *mockSource) OffsetLocation(offset int32) (common.Location, bool) {
 		return src.baseLocation, true
 	}
 	return src.Source.OffsetLocation(offset)
+}
+
+func TestSourceInfoRenumberIDs(t *testing.T) {
+	info := ast.NewSourceInfo(nil)
+	for old := int64(1); old <= 5; old++ {
+		info.SetOffsetRange(old, ast.OffsetRange{Start: int32(old), Stop: int32(old) + 1})
+	}
+	original := make(map[int64]ast.OffsetRange)
+	maps.Copy(original, info.OffsetRanges())
+
+	// Verify the renumbering is stable.
+	var next int64 = 101
+	idMap := make(map[int64]int64)
+	idGen := func(old int64) int64 {
+		if _, found := idMap[old]; !found {
+			idMap[old] = next
+			next = next + 1
+		}
+		return idMap[old]
+	}
+	info.RenumberIDs(idGen)
+
+	if len(info.OffsetRanges()) != 5 {
+		t.Errorf("got %d offset ranges, wanted 5", len(info.OffsetRanges()))
+	}
+
+	for old := int64(1); old <= 5; old++ {
+		want := original[old]
+		new := old + 100
+		got, found := info.GetOffsetRange(new)
+		if !found {
+			t.Errorf("offset range for ID %d not found", new)
+		}
+		if got != want {
+			t.Errorf("offset range for ID %d incorrect; got %v, want %v", new, got, want)
+		}
+	}
 }

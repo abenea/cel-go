@@ -16,6 +16,8 @@
 package ast
 
 import (
+	"slices"
+
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
@@ -240,6 +242,23 @@ type SourceInfo struct {
 	baseCol      int32
 	offsetRanges map[int64]OffsetRange
 	macroCalls   map[int64]Expr
+}
+
+// RenumberIDs performs an in-place update of the expression IDs within the SourceInfo.
+func (s *SourceInfo) RenumberIDs(idGen IDGenerator) {
+	if s == nil {
+		return
+	}
+	oldIDs := []int64{}
+	for id := range s.offsetRanges {
+		oldIDs = append(oldIDs, id)
+	}
+	slices.Sort(oldIDs)
+	newRanges := make(map[int64]OffsetRange)
+	for _, id := range oldIDs {
+		newRanges[idGen(id)] = s.offsetRanges[id]
+	}
+	s.offsetRanges = newRanges
 }
 
 // SyntaxVersion returns the syntax version associated with the text expression.

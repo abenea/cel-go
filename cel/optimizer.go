@@ -129,30 +129,14 @@ func (opt *StaticOptimizer) Optimize(env *Env, a *Ast) (*Ast, *Issues) {
 	}, nil
 }
 
-func updateOffsetRanges(idGen ast.IDGenerator, info *ast.SourceInfo) {
-	newRanges := make(map[int64]ast.OffsetRange)
-	sortedOldIDs := []int64{}
-	for oldID := range info.OffsetRanges() {
-		sortedOldIDs = append(sortedOldIDs, oldID)
-	}
-	sort.Slice(sortedOldIDs, func(i, j int) bool { return sortedOldIDs[i] < sortedOldIDs[j] })
-	for _, oldID := range sortedOldIDs {
-		offsetRange, _ := info.GetOffsetRange(oldID)
-		newRanges[idGen(oldID)] = offsetRange
-		info.ClearOffsetRange(oldID)
-	}
-	for newID, offsetRange := range newRanges {
-		info.SetOffsetRange(newID, offsetRange)
-	}
-}
-
 // normalizeIDs ensures that the metadata present with an AST is reset in a manner such
 // that the ids within the expression correspond to the ids within macros.
 func normalizeIDs(idGen ast.IDGenerator, optimized ast.Expr, info *ast.SourceInfo, mergeSourceInfo bool) {
 	optimized.RenumberIDs(idGen)
 	if mergeSourceInfo {
-		updateOffsetRanges(idGen, info)
+		info.RenumberIDs(idGen)
 	}
+
 	if len(info.MacroCalls()) == 0 {
 		return
 	}
